@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ruota Della Fortuna</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Poppins:wght@400;500;600&display=swap">
+<style>
+:root{--gold1:#ffffff;--gold2:#e8eefc;--gold3:#9db4e8;--ink:#08090c;--card:rgba(255,255,255,.04);--line:rgba(120,160,255,.3);--txt:#f2f4f8;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:'Poppins',system-ui,sans-serif;color:var(--txt);background:radial-gradient(ellipse at 50% 0%,#111a33 0%,#08090c 60%);background-color:var(--ink);overflow-x:hidden;min-height:100%}
+body::before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 80% 90%,rgba(59,130,246,.10),transparent 45%);pointer-events:none}
+main{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px;gap:20px}
+h1{font-family:'Poppins',sans-serif;font-weight:500;font-size:clamp(1.5rem,5vw,2.4rem);margin:0;text-align:center;letter-spacing:.18em;text-transform:uppercase;color:#fff}
+.sub{margin:-12px 0 0;text-align:center;opacity:.7;letter-spacing:.3em;font-size:.75rem;text-transform:uppercase}
+.card{width:min(480px,100%);background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;backdrop-filter:blur(14px);box-shadow:0 20px 60px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.1)}
+.card label{display:block;font-size:.85rem;opacity:.8;margin-bottom:10px}
+textarea{width:100%;height:240px;resize:vertical;background:rgba(0,0,0,.35);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:14px;font:500 1rem/1.6 'Poppins',sans-serif;outline:none}
+textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.25)}
+.count{font-size:.8rem;opacity:.65;margin:8px 2px 16px}
+.btn{cursor:pointer;border:0;border-radius:999px;font:600 1rem 'Poppins',sans-serif;letter-spacing:.12em;text-transform:uppercase;padding:15px 34px;color:#0a0f1f;background:#fff;box-shadow:0 6px 20px rgba(59,130,246,.25);transition:transform .15s,filter .15s}
+.btn:hover{transform:translateY(-2px);filter:brightness(1.07)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn.full{width:100%}
+.btn.ghost{background:transparent;color:var(--gold2);border:1px solid var(--line);box-shadow:none;padding:10px 22px;font-size:.8rem}
+.hidden{display:none!important}
+#stage{display:flex;flex-direction:column;align-items:center;gap:22px;width:100%}
+#wheel{width:min(92vw,620px);height:min(92vw,620px);max-height:68vh;max-width:68vh;aspect-ratio:1;display:block;cursor:pointer;touch-action:manipulation}
+#modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,3,15,.7);backdrop-filter:blur(6px);z-index:20;padding:20px}
+#modal .card{text-align:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+#modal small{letter-spacing:.3em;text-transform:uppercase;opacity:.7}
+#win{font-weight:600;font-size:clamp(2rem,9vw,3.2rem);margin:12px 0 22px;word-break:break-word;color:#fff}
+.row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+#fx{position:fixed;inset:0;pointer-events:none;z-index:30}
+</style>
+</head>
+<body>
+<main>
+  <h1>Ruota della Fortuna</h1>
+  <p class="sub">Scelta a sorte</p>
+
+  <section id="setup" class="card">
+    <label for="names">Inserisci i partecipanti, uno per riga</label>
+    <textarea id="names" placeholder="Andrea&#10;Giuseppe&#10;Marco&#10;Giulia&#10;…"></textarea>
+    <div class="count" id="count">0 nomi</div>
+    <button class="btn full" id="create" disabled>Crea la ruota</button>
+  </section>
+
+  <section id="stage" class="hidden">
+    <canvas id="wheel"></canvas>
+    <div class="row">
+      <button class="btn" id="spin">Gira</button>
+      <button class="btn ghost" id="edit">Modifica i nomi</button>
+      <button class="btn ghost hidden" id="reset">Rimetti tutti</button>
+    </div>
+    <div id="hist" style="opacity:.7;font-size:.85rem;text-align:center;max-width:600px;line-height:1.6"></div>
+  </section>
+</main>
+
+<div id="modal" class="hidden">
+  <div class="card">
+    <small>Estratto</small>
+    <div id="win"></div>
+    <div class="row">
+      <button class="btn" id="again">Gira ancora</button>
+      <button class="btn ghost" id="close">Chiudi</button>
+    </div>
+  </div>
+</div>
+<canvas id="fx"></canvas>
+
+<script>
+/* =====================================================
+   CONFIGURAZIONE
+   never: nomi che NON possono mai uscire (0%), in minuscolo.
+   Tutti gli altri nomi hanno esattamente la stessa probabilità.
+   Esempio: never: ["andrea", "giuseppe"]
+   ===================================================== */
+const CONFIG = {
+  never: [
+    'andrea',
+  ]
+};
+
+const TAU = Math.PI * 2;
+const rnd = () => { try { return crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296; } catch (e) { return Math.random(); } };
+const $ = id => document.getElementById(id);
+const NEVER = new Set(CONFIG.never.map(s => s.trim().toLowerCase()));
+
+let names = [], all = [], drawn = [], winIdx = -1, rot = 0, spinning = false, flap = 0, lastK = null, lastTick = 0, actx = null;
+const cv = $('wheel'), g = cv.getContext('2d');
+let S = 600, dpr = 1;
+
+/* ---------- setup ---------- */
+const parse = () => $('names').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 40);
+$('names').addEventListener('input', () => {
+  const n = parse().length;
+  $('count').textContent = n + (n === 1 ? ' nome' : ' nomi') + (n < 2 ? ' (ne servono almeno 2)' : '');
+  $('create').disabled = n < 2;
+});
+$('create').onclick = () => {
+  all = parse(); names = all.slice(); drawn = []; winIdx = -1; lastK = null; rot = Math.random() * TAU; setUI();
+  $('setup').classList.add('hidden'); $('stage').classList.remove('hidden');
+  resize();
+};
+$('edit').onclick = () => { if (spinning) return; $('stage').classList.add('hidden'); $('setup').classList.remove('hidden'); };
+
+/* ---------- scelta vincitore (truccata) ---------- */
+function pick() {
+  const all = names.map((_, i) => i);
+  const ok = all.filter(i => !NEVER.has(names[i].toLowerCase()));
+  const pool = ok.length ? ok : all;
+  return pool[Math.floor(rnd() * pool.length)];
+}
+
+/* ---------- audio ---------- */
+function audio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) {} }
+function beep(f, d, v, type) {
+  if (!actx) return; const o = actx.createOscillator(), a = actx.createGain(), t = actx.currentTime;
+  o.type = type || 'triangle'; o.frequency.value = f; a.gain.setValueAtTime(v, t); a.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(a); a.connect(actx.destination); o.start(t); o.stop(t + d);
+}
+
+/* ---------- spin ---------- */
+let anim = null;
+function spin() {
+  if (spinning || names.length < 2) return;
+  audio(); spinning = true; $('spin').disabled = true; $('edit').disabled = true;
+  const n = names.length, a = TAU / n, idx = pick();
+  const off = idx * a + a * (0.12 + Math.random() * 0.76);
+  const target = -Math.PI / 2 - off;
+  const delta = (((target - rot) % TAU) + TAU) % TAU + TAU * (5 + Math.floor(Math.random() * 4));
+  anim = { t0: performance.now(), from: rot, delta, dur: (6 + Math.random() * 2.5) * 1000 };
+}
+$('spin').onclick = spin; cv.onclick = spin;
+
+function update(now) {
+  if (anim) {
+    const t = Math.min(1, (now - anim.t0) / anim.dur);
+    rot = anim.from + anim.delta * (1 - Math.pow(1 - t, 3.6));
+    if (t >= 1) { anim = null; spinning = false; finish(); }
+  }
+  const a = TAU / names.length, k = Math.floor((-Math.PI / 2 - rot) / a);
+  if (lastK !== null && k !== lastK && spinning) {
+    flap = 1;
+    if (now - lastTick > 35) { beep(1000 + Math.random() * 200, 0.05, 0.07); lastTick = now; }
+  }
+  lastK = k; flap *= 0.9;
+}
+
+function finish() {
+  const n = names.length, a = TAU / n;
+  const k = ((Math.floor((-Math.PI / 2 - rot) / a) % n) + n) % n;
+  setTimeout(() => {
+    winIdx = k; $('win').textContent = names[k]; $('modal').classList.remove('hidden');
+
+    $('spin').disabled = false; $('edit').disabled = false;
+  }, 500);
+}
+function dismiss() {
+  $('modal').classList.add('hidden');
+  if (winIdx >= 0) { drawn.push(names[winIdx]); names.splice(winIdx, 1); winIdx = -1; lastK = null; }
+  setUI();
+}
+function setUI() {
+  $('spin').disabled = spinning || names.length < 2;
+  $('spin').textContent = names.length === 1 ? 'Ultimo rimasto' : 'Gira';
+  $('hist').textContent = drawn.length ? 'Estratti: ' + drawn.map((d, i) => (i + 1) + '. ' + d).join('   ') : '';
+  $('reset').classList.toggle('hidden', !drawn.length);
+}
+$('close').onclick = dismiss;
+$('again').onclick = () => { dismiss(); spin(); };
+$('reset').onclick = () => { if (spinning) return; names = all.slice(); drawn = []; lastK = null; setUI(); };
+
+/* ---------- disegno ---------- */
+function resize() {
+  const r = cv.getBoundingClientRect(); if (!r.width) return;
+  dpr = Math.min(window.devicePixelRatio || 1, 2); S = r.width;
+  cv.width = S * dpr; cv.height = S * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize);
+
+function lin(x0, y0, x1, y1, stops) { const l = g.createLinearGradient(x0, y0, x1, y1); stops.forEach((s, i) => l.addColorStop(i / (stops.length - 1), s)); return l; }
+
+const PAL = [['#2563eb', '#1e3a8a', 0], ['#f1f5f9', '#cbd5e1', 1], ['#0f172a', '#020617', 0], ['#60a5fa', '#2563eb', 1], ['#ffffff', '#e2e8f0', 1], ['#1e40af', '#172554', 0], ['#94a3b8', '#64748b', 1]];
+function sliceCol(i, n) { let k = i % PAL.length; if (i === n - 1 && k === 0 && n > 1) k = 2; const p = PAL[k]; return { c: p[0], d: p[1], l: p[2] }; }
+
+function draw(now) {
+  g.clearRect(0, 0, S, S);
+  const n = names.length; if (n < 1) return;
+  const c = S / 2, Ro = S / 2 - 4, Rw = Ro * 0.86, a = TAU / n;
+
+  // ombra
+  g.save(); g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 40; g.shadowOffsetY = 18;
+  g.beginPath(); g.arc(c, c, Ro, 0, TAU); g.fillStyle = '#10131a'; g.fill(); g.restore();
+
+  // cornice dorata
+  g.beginPath(); g.arc(c, c, Ro, 0, TAU); g.fillStyle = lin(0, 0, S, S, ['#f5f7fb', '#8a93a6', '#2b3140', '#cfd6e6', '#59627a']); g.fill();
+  g.beginPath(); g.arc(c, c, Ro * 0.9, 0, TAU); g.fillStyle = lin(S, S, 0, 0, ['#cfd6e6', '#59627a', '#1c212c', '#aeb8cf']); g.fill();
+  g.beginPath(); g.arc(c, c, Rw + 5, 0, TAU); g.fillStyle = '#0b1020'; g.fill();
+
+  // lampadine
+  const bn = 0, br = Ro * 0.945;
+  for (let i = 0; i < bn; i++) {
+    const ang = i / bn * TAU - Math.PI / 2, x = c + Math.cos(ang) * br, y = c + Math.sin(ang) * br;
+    const on = spinning ? ((i + Math.floor(now / 90)) % 2 === 0) : ((i + Math.floor(now / 600)) % 2 === 0);
+    const rr = Ro * 0.021;
+    if (on) { g.save(); g.shadowColor = '#ffe9a0'; g.shadowBlur = 16; }
+    g.beginPath(); g.arc(x, y, rr, 0, TAU);
+    const rg = g.createRadialGradient(x - rr * .3, y - rr * .3, 0, x, y, rr);
+    rg.addColorStop(0, on ? '#ffffff' : '#c9a24a'); rg.addColorStop(1, on ? '#ffd966' : '#7a5a10');
+    g.fillStyle = rg; g.fill(); if (on) g.restore();
+  }
+
+  // spicchi
+  g.save(); g.translate(c, c); g.rotate(rot);
+  for (let i = 0; i < n; i++) {
+    const col = sliceCol(i, n);
+    g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, Rw, i * a, (i + 1) * a); g.closePath();
+    const rg = g.createRadialGradient(0, 0, Rw * 0.1, 0, 0, Rw);
+    rg.addColorStop(0, col.d); rg.addColorStop(1, col.c);
+    g.fillStyle = rg; g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.3)'; g.lineWidth = 1.5; g.stroke();
+  }
+  // testi
+  const fs = Math.max(11, Math.min(Rw * 0.085, Rw * a * 0.34));
+  g.font = `600 ${fs}px Poppins, sans-serif`; g.textBaseline = 'middle'; g.textAlign = 'right';
+  const maxW = Rw * 0.93 - Rw * 0.22;
+  for (let i = 0; i < n; i++) {
+    g.save(); g.rotate((i + 0.5) * a);
+    let t = names[i];
+    if (g.measureText(t).width > maxW) { while (t.length > 1 && g.measureText(t + '…').width > maxW) t = t.slice(0, -1); t += '…'; }
+    g.shadowColor = 'transparent';
+    g.fillStyle = sliceCol(i, n).l ? '#0b1220' : '#fff'; g.fillText(t, Rw * 0.93, 0); g.restore();
+  }
+  // perni
+  for (let i = 0; i < n; i++) {
+    const ang = i * a, x = Math.cos(ang) * (Rw - 1), y = Math.sin(ang) * (Rw - 1), pr = Ro * 0.018;
+    g.beginPath(); g.arc(x, y, pr, 0, TAU); g.fillStyle = lin(x - pr, y - pr, x + pr, y + pr, ['#ffffff', '#9db4e8', '#3b4a6b']); g.fill();
+  }
+  g.restore();
+
+  // vetro / riflesso
+  const gl = g.createRadialGradient(c - Rw * .35, c - Rw * .45, 0, c, c, Rw);
+  gl.addColorStop(0, 'rgba(255,255,255,.16)'); gl.addColorStop(.5, 'rgba(255,255,255,0)'); gl.addColorStop(1, 'rgba(0,0,0,.2)');
+  g.beginPath(); g.arc(c, c, Rw, 0, TAU); g.fillStyle = gl; g.fill();
+
+  // mozzo
+  const hr = Ro * 0.13;
+  g.save(); g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 14;
+  g.beginPath(); g.arc(c, c, hr, 0, TAU); g.fillStyle = lin(c - hr, c - hr, c + hr, c + hr, ['#ffffff', '#9aa6c0', '#2b3140']); g.fill(); g.restore();
+  g.beginPath(); g.arc(c, c, hr * 0.72, 0, TAU); g.fillStyle = lin(c + hr, c + hr, c - hr, c - hr, ['#ffffff', '#cfd6e6', '#59627a']); g.fill();
+  g.beginPath(); g.arc(c, c, hr * 0.28, 0, TAU); g.fillStyle = '#2563eb'; g.fill();
+
+  // puntatore con linguetta
+  const px = c, py = c - Ro * 0.985, L = Ro * 0.15, wd = Ro * 0.05;
+  g.save(); g.translate(px, py); g.rotate(-flap * 0.55);
+  g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 10; g.shadowOffsetY = 4;
+  g.beginPath(); g.moveTo(-wd, 0); g.lineTo(wd, 0); g.lineTo(0, L); g.closePath();
+  g.fillStyle = lin(-wd, 0, wd, L, ['#60a5fa', '#2563eb', '#1e3a8a']); g.fill();
+  g.shadowColor = 'transparent'; g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.stroke();
+  g.beginPath(); g.arc(0, 0, wd * 0.8, 0, TAU); g.fillStyle = lin(-wd, -wd, wd, wd, ['#ffffff', '#9aa6c0']); g.fill();
+  g.restore();
+}
+
+function loop(now) { if (!$('stage').classList.contains('hidden')) { update(now); draw(now); } requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+
+/* ---------- coriandoli ---------- */
+const fx = $('fx'), f = fx.getContext('2d'); let parts = [], run = false;
+function confetti() {
+  fx.width = innerWidth; fx.height = innerHeight;
+  const cols = ['#ffd166', '#ef476f', '#06d6a0', '#118ab2', '#fff1b8', '#c77dff'];
+  for (let i = 0; i < 160; i++) parts.push({ x: innerWidth / 2, y: innerHeight * 0.55, vx: (Math.random() - .5) * 18, vy: -Math.random() * 18 - 4, s: 5 + Math.random() * 7, r: Math.random() * 6, vr: (Math.random() - .5) * .4, c: cols[i % cols.length], life: 1 });
+  if (!run) { run = true; requestAnimationFrame(cf); }
+}
+function cf() {
+  f.clearRect(0, 0, fx.width, fx.height);
+  parts.forEach(p => { p.vy += .35; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr; p.life -= .004;
+    f.save(); f.translate(p.x, p.y); f.rotate(p.r); f.globalAlpha = Math.max(0, p.life); f.fillStyle = p.c; f.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); f.restore(); });
+  parts = parts.filter(p => p.life > 0 && p.y < fx.height + 20);
+  if (parts.length) requestAnimationFrame(cf); else { run = false; f.clearRect(0, 0, fx.width, fx.height); }
+}
+</script>
+</body>
+</html>
